@@ -243,6 +243,200 @@ def _create_labor_report(
 
 
 # ──────────────────────────────────────────────────────────
+# 1件処理パイプライン（Web API / 個別送信用）
+# ──────────────────────────────────────────────────────────
+
+def run_single(response_data: dict, pdf_out_dir: str = "/tmp/pdfs") -> dict:
+    """
+    1件分の回答データをスコアリング → 個人PDF生成 → メール送信する
+
+    Parameters
+    ----------
+    response_data : dict
+        {
+          "company_id":      str,              # 企業コード
+          "name":            str,              # 氏名（PDF表示用）
+          "email":           str,              # 送付先メールアドレス
+          "department":      str,
+          "gender":          str,
+          "age_group":       str,
+          "employment_type": str,              # 省略可
+          "answers":         {"Q1": 4, ...},   # 1-4 の整数
+          "version":         "57"/"80"/"120",  # 省略時 "57"
+          "response_id":     str,              # 省略時は自動生成
+          "submitted_at":    str,              # ISO8601、省略時は現在時刻
+        }
+    pdf_out_dir : str
+        PDF保存先ディレクトリ
+
+    Returns
+    -------
+    dict
+        {
+          "success":          bool,
+          "high_stress":      bool,
+          "high_stress_reason": str or None,
+          "pdf_path":         str or None,
+          "email_sent":       bool,
+          "errors":           list[str],
+        }
+    """
+    from src.scoring.calculator import StressCheckScorer
+    from src.output.individual_pdf import generate_individual_pdf
+
+    errors = []
+    version     = str(response_data.get("version", "57"))
+    company_id  = response_data.get("company_id", "UNKNOWN")
+    response_id = response_data.get("response_id") or _new_response_id()
+    submitted_at = (response_data.get("submitted_at") or datetime.now().isoformat())[:10]
+
+    # ── 回答を {int: int} に正規化 ─────────────────────────
+    answers_raw = response_data.get("answers", {})
+    responses: dict[int, int] = {}
+    for key, val in answers_raw.items():
+        k = str(key).upper().lstrip("Q")
+        try:
+            responses[int(k)] = int(val)
+        except (ValueError, TypeError):
+            continue
+
+    if not responses:
+        return {"success": False, "errors": ["answers が空です"], "pdf_path": None,
+                "email_sent": False, "high_stress": None, "high_stress_reason": None}
+
+    # ── スコアリング ──────────────────────────────────────
+    try:
+        scorer = StressCheckScorer(version=version)
+        score_result = scorer.calculate(responses)
+        score_result["_raw_responses"] = responses
+        comparison = scorer.compare_to_national(
+            {k: v for k, v in score_result["scale_scores"].items() if v is not None}
+        )
+    except Exception as e:
+        logger.exception("run_single: スコアリング失敗")
+        return {"success": False, "errors": [f"scoring: {e}"], "pdf_path": None,
+                "email_sent": False, "high_stress": None, "high_stress_reason": None}
+
+    # ── PDF生成 ──────────────────────────────────────────
+    pdf_path = None
+    try:
+        out_dir = Path(pdf_out_dir) / company_id
+        out_dir.mkdir(parents=True, exist_ok=True)
+        pdf_path = str(out_dir / f"{response_id}_{submitted_at}.pdf")
+
+        meta = {
+            "department":      response_data.get("department", ""),
+            "gender":          response_data.get("gender", ""),
+            "age_group":       response_data.get("age_group", ""),
+            "employment_type": response_data.get("employment_type", ""),
+            "name":            response_data.get("name", ""),
+        }
+        generate_individual_pdf(
+            employee_hash=response_id,
+            score_result=score_result,
+            comparison=comparison,
+            meta=meta,
+            output_path=pdf_path,
+            lang="ja",
+            company_name=company_id,
+            impl_date=submitted_at,
+        )
+        logger.info(f"PDF生成: {pdf_path}")
+    except Exception as e:
+        logger.exception("run_single: PDF生成失敗")
+        errors.append(f"pdf: {e}")
+        pdf_path = None
+
+    # ── メール送信 ──────────────────────────────────────
+    email_sent = False
+    email_addr = response_data.get("email", "")
+    if email_addr and pdf_path:
+        try:
+            _send_result_email(
+                to_addr=email_addr,
+                pdf_path=pdf_path,
+                name=response_data.get("name", ""),
+                high_stress=score_result["high_stress"],
+            )
+            email_sent = True
+            logger.info(f"メール送信: {email_addr}")
+        except Exception as e:
+            logger.warning(f"run_single: メール送信失敗 ({e})")
+            errors.append(f"email: {e}")
+
+    return {
+        "success":            pdf_path is not None,
+        "high_stress":        score_result["high_stress"],
+        "high_stress_reason": score_result.get("high_stress_reason"),
+        "pdf_path":           pdf_path,
+        "email_sent":         email_sent,
+        "errors":             errors,
+    }
+
+
+def _new_response_id() -> str:
+    """タイムスタンプベースの簡易ID生成"""
+    import uuid
+    return uuid.uuid4().hex[:12]
+
+
+def _send_result_email(
+    to_addr: str, pdf_path: str, name: str, high_stress: bool
+) -> None:
+    """
+    個人結果PDFをメール添付して送信する（smtplib）
+
+    環境変数:
+      SMTP_HOST, SMTP_PORT (default 587), SMTP_USER, SMTP_PASS, FROM_EMAIL
+    SMTP_HOST が未設定の場合は NotImplementedError を送出する。
+    """
+    smtp_host = os.environ.get("SMTP_HOST", "")
+    if not smtp_host:
+        raise NotImplementedError(
+            "SMTP_HOST が未設定です。環境変数を設定してください。"
+        )
+
+    import smtplib
+    from email.mime.application import MIMEApplication
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    smtp_port  = int(os.environ.get("SMTP_PORT", "587"))
+    smtp_user  = os.environ.get("SMTP_USER", "")
+    smtp_pass  = os.environ.get("SMTP_PASS", "")
+    from_email = os.environ.get("FROM_EMAIL", "noreply@example.com")
+
+    subject = "【ストレスチェック】あなたの結果をお知らせします"
+    greeting = (
+        f"{name} さん\n\n"
+        "ストレスチェックの結果をお送りします。\n"
+    )
+    body_text = greeting + (
+        "今回の結果では、高いストレス状態が確認されました。\n"
+        "産業医・保健師への相談をご検討ください。\n\n"
+        if high_stress else "\n"
+    ) + "添付のPDFをご確認ください。"
+
+    msg = MIMEMultipart()
+    msg["From"]    = from_email
+    msg["To"]      = to_addr
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body_text, "plain", "utf-8"))
+
+    with open(pdf_path, "rb") as f:
+        part = MIMEApplication(f.read(), Name=Path(pdf_path).name)
+        part["Content-Disposition"] = f'attachment; filename="{Path(pdf_path).name}"'
+        msg.attach(part)
+
+    with smtplib.SMTP(smtp_host, smtp_port) as server:
+        server.ehlo()
+        server.starttls()
+        if smtp_user and smtp_pass:
+            server.login(smtp_user, smtp_pass)
+        server.sendmail(from_email, to_addr, msg.as_string())
+
+
+# ──────────────────────────────────────────────────────────
 # CLI エントリーポイント
 # ──────────────────────────────────────────────────────────
 if __name__ == "__main__":
