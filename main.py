@@ -277,7 +277,7 @@ def run_single(response_data: dict, pdf_out_dir: str = "/tmp/pdfs") -> dict:
           "high_stress":      bool,
           "high_stress_reason": str or None,
           "pdf_path":         str or None,
-          "email_sent":       bool,
+          "email_payload":    dict or None,  # GAS に渡すメール送信ペイロード
           "errors":           list[str],
         }
     """
@@ -347,29 +347,29 @@ def run_single(response_data: dict, pdf_out_dir: str = "/tmp/pdfs") -> dict:
         errors.append(f"pdf: {e}")
         pdf_path = None
 
-    # ── メール送信 ──────────────────────────────────────
-    email_sent = False
+    # ── メール送信ペイロード組み立て（送信はGASが担当）────────
+    email_payload = None
     email_addr = response_data.get("email", "")
     if email_addr and pdf_path:
         try:
-            _send_result_email(
+            from src.email_sender import build_email_payload
+            email_payload = build_email_payload(
                 to_addr=email_addr,
-                pdf_path=pdf_path,
                 name=response_data.get("name", ""),
+                pdf_path=pdf_path,
                 high_stress=score_result["high_stress"],
             )
-            email_sent = True
-            logger.info(f"メール送信: {email_addr}")
+            logger.info(f"メールペイロード生成: {email_addr}")
         except Exception as e:
-            logger.warning(f"run_single: メール送信失敗 ({e})")
-            errors.append(f"email: {e}")
+            logger.warning(f"run_single: メールペイロード生成失敗 ({e})")
+            errors.append(f"email_payload: {e}")
 
     return {
         "success":            pdf_path is not None,
         "high_stress":        score_result["high_stress"],
         "high_stress_reason": score_result.get("high_stress_reason"),
         "pdf_path":           pdf_path,
-        "email_sent":         email_sent,
+        "email_payload":      email_payload,
         "errors":             errors,
     }
 
@@ -379,24 +379,6 @@ def _new_response_id() -> str:
     import uuid
     return uuid.uuid4().hex[:12]
 
-
-def _send_result_email(
-    to_addr: str, pdf_path: str, name: str, high_stress: bool
-) -> None:
-    """
-    個人結果PDFをGmail APIで送信する
-
-    環境変数:
-      GMAIL_CREDENTIALS_PATH  credentials.json のパス（省略時: credentials.json）
-      GMAIL_TOKEN_PATH        token.json の保存先（省略時: token.json）
-    """
-    from src.email_sender import send_result_email
-    send_result_email(
-        to_addr=to_addr,
-        name=name,
-        pdf_path=pdf_path,
-        high_stress=high_stress,
-    )
 
 
 # ──────────────────────────────────────────────────────────

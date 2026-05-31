@@ -112,8 +112,9 @@ def run_stress_check():
                   detail={"errors": result["errors"]})
         return jsonify({"status": "error", "errors": result["errors"]}), 500
 
+    has_payload = result.get("email_payload") is not None
     audit.log("pipeline_complete", user_id=response_id,
-              detail={"pdf": result["pdf_path"], "email_sent": result["email_sent"]})
+              detail={"pdf": result["pdf_path"], "email_payload_ready": has_payload})
 
     status_code = 200 if result["success"] else 207
     return jsonify({
@@ -122,7 +123,7 @@ def run_stress_check():
         "high_stress":        result["high_stress"],
         "high_stress_reason": result["high_stress_reason"],
         "pdf_path":           result["pdf_path"],
-        "email_sent":         result["email_sent"],
+        "email_payload":      result.get("email_payload"),  # GASがこれを受け取って送信する
         "errors":             result["errors"],
     }), status_code
 

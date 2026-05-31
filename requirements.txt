@@ -16,10 +16,6 @@ matplotlib>=3.7.0
 flask>=3.0.0
 gunicorn>=21.2.0
 
-# Gmail API
-google-auth>=2.28.0
-google-auth-oauthlib>=1.2.0
-google-api-python-client>=2.120.0
 
 # 開発・テスト
 pytest>=7.4.0
