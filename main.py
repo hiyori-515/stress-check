@@ -384,56 +384,19 @@ def _send_result_email(
     to_addr: str, pdf_path: str, name: str, high_stress: bool
 ) -> None:
     """
-    個人結果PDFをメール添付して送信する（smtplib）
+    個人結果PDFをGmail APIで送信する
 
     環境変数:
-      SMTP_HOST, SMTP_PORT (default 587), SMTP_USER, SMTP_PASS, FROM_EMAIL
-    SMTP_HOST が未設定の場合は NotImplementedError を送出する。
+      GMAIL_CREDENTIALS_PATH  credentials.json のパス（省略時: credentials.json）
+      GMAIL_TOKEN_PATH        token.json の保存先（省略時: token.json）
     """
-    smtp_host = os.environ.get("SMTP_HOST", "")
-    if not smtp_host:
-        raise NotImplementedError(
-            "SMTP_HOST が未設定です。環境変数を設定してください。"
-        )
-
-    import smtplib
-    from email.mime.application import MIMEApplication
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
-
-    smtp_port  = int(os.environ.get("SMTP_PORT", "587"))
-    smtp_user  = os.environ.get("SMTP_USER", "")
-    smtp_pass  = os.environ.get("SMTP_PASS", "")
-    from_email = os.environ.get("FROM_EMAIL", "noreply@example.com")
-
-    subject = "【ストレスチェック】あなたの結果をお知らせします"
-    greeting = (
-        f"{name} さん\n\n"
-        "ストレスチェックの結果をお送りします。\n"
+    from src.email_sender import send_result_email
+    send_result_email(
+        to_addr=to_addr,
+        name=name,
+        pdf_path=pdf_path,
+        high_stress=high_stress,
     )
-    body_text = greeting + (
-        "今回の結果では、高いストレス状態が確認されました。\n"
-        "産業医・保健師への相談をご検討ください。\n\n"
-        if high_stress else "\n"
-    ) + "添付のPDFをご確認ください。"
-
-    msg = MIMEMultipart()
-    msg["From"]    = from_email
-    msg["To"]      = to_addr
-    msg["Subject"] = subject
-    msg.attach(MIMEText(body_text, "plain", "utf-8"))
-
-    with open(pdf_path, "rb") as f:
-        part = MIMEApplication(f.read(), Name=Path(pdf_path).name)
-        part["Content-Disposition"] = f'attachment; filename="{Path(pdf_path).name}"'
-        msg.attach(part)
-
-    with smtplib.SMTP(smtp_host, smtp_port) as server:
-        server.ehlo()
-        server.starttls()
-        if smtp_user and smtp_pass:
-            server.login(smtp_user, smtp_pass)
-        server.sendmail(from_email, to_addr, msg.as_string())
 
 
 # ──────────────────────────────────────────────────────────
