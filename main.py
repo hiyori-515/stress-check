@@ -243,6 +243,145 @@ def _create_labor_report(
 
 
 # ──────────────────────────────────────────────────────────
+# 1件処理パイプライン（Web API / 個別送信用）
+# ──────────────────────────────────────────────────────────
+
+def run_single(response_data: dict, pdf_out_dir: str = "/tmp/pdfs") -> dict:
+    """
+    1件分の回答データをスコアリング → 個人PDF生成 → メール送信する
+
+    Parameters
+    ----------
+    response_data : dict
+        {
+          "company_id":      str,              # 企業コード
+          "name":            str,              # 氏名（PDF表示用）
+          "email":           str,              # 送付先メールアドレス
+          "department":      str,
+          "gender":          str,
+          "age_group":       str,
+          "employment_type": str,              # 省略可
+          "answers":         {"Q1": 4, ...},   # 1-4 の整数
+          "version":         "57"/"80"/"120",  # 省略時 "57"
+          "response_id":     str,              # 省略時は自動生成
+          "submitted_at":    str,              # ISO8601、省略時は現在時刻
+        }
+    pdf_out_dir : str
+        PDF保存先ディレクトリ
+
+    Returns
+    -------
+    dict
+        {
+          "success":          bool,
+          "high_stress":      bool,
+          "high_stress_reason": str or None,
+          "pdf_path":         str or None,
+          "email_payload":    dict or None,  # GAS に渡すメール送信ペイロード
+          "errors":           list[str],
+        }
+    """
+    from src.scoring.calculator import StressCheckScorer
+    from src.output.individual_pdf import generate_individual_pdf
+
+    errors = []
+    version     = str(response_data.get("version", "57"))
+    company_id  = response_data.get("company_id", "UNKNOWN")
+    response_id = response_data.get("response_id") or _new_response_id()
+    submitted_at = (response_data.get("submitted_at") or datetime.now().isoformat())[:10]
+
+    # ── 回答を {int: int} に正規化 ─────────────────────────
+    answers_raw = response_data.get("answers", {})
+    responses: dict[int, int] = {}
+    for key, val in answers_raw.items():
+        k = str(key).upper().lstrip("Q")
+        try:
+            responses[int(k)] = int(val)
+        except (ValueError, TypeError):
+            continue
+
+    if not responses:
+        return {"success": False, "errors": ["answers が空です"], "pdf_path": None,
+                "email_sent": False, "high_stress": None, "high_stress_reason": None}
+
+    # ── スコアリング ──────────────────────────────────────
+    try:
+        scorer = StressCheckScorer(version=version)
+        score_result = scorer.calculate(responses)
+        score_result["_raw_responses"] = responses
+        comparison = scorer.compare_to_national(
+            {k: v for k, v in score_result["scale_scores"].items() if v is not None}
+        )
+    except Exception as e:
+        logger.exception("run_single: スコアリング失敗")
+        return {"success": False, "errors": [f"scoring: {e}"], "pdf_path": None,
+                "email_sent": False, "high_stress": None, "high_stress_reason": None}
+
+    # ── PDF生成 ──────────────────────────────────────────
+    pdf_path = None
+    try:
+        out_dir = Path(pdf_out_dir) / company_id
+        out_dir.mkdir(parents=True, exist_ok=True)
+        pdf_path = str(out_dir / f"{response_id}_{submitted_at}.pdf")
+
+        meta = {
+            "department":      response_data.get("department", ""),
+            "gender":          response_data.get("gender", ""),
+            "age_group":       response_data.get("age_group", ""),
+            "employment_type": response_data.get("employment_type", ""),
+            "name":            response_data.get("name", ""),
+        }
+        generate_individual_pdf(
+            employee_hash=response_id,
+            score_result=score_result,
+            comparison=comparison,
+            meta=meta,
+            output_path=pdf_path,
+            lang="ja",
+            company_name=company_id,
+            impl_date=submitted_at,
+        )
+        logger.info(f"PDF生成: {pdf_path}")
+    except Exception as e:
+        logger.exception("run_single: PDF生成失敗")
+        errors.append(f"pdf: {e}")
+        pdf_path = None
+
+    # ── メール送信ペイロード組み立て（送信はGASが担当）────────
+    email_payload = None
+    email_addr = response_data.get("email", "")
+    if email_addr and pdf_path:
+        try:
+            from src.email_sender import build_email_payload
+            email_payload = build_email_payload(
+                to_addr=email_addr,
+                name=response_data.get("name", ""),
+                pdf_path=pdf_path,
+                high_stress=score_result["high_stress"],
+            )
+            logger.info(f"メールペイロード生成: {email_addr}")
+        except Exception as e:
+            logger.warning(f"run_single: メールペイロード生成失敗 ({e})")
+            errors.append(f"email_payload: {e}")
+
+    return {
+        "success":            pdf_path is not None,
+        "high_stress":        score_result["high_stress"],
+        "high_stress_reason": score_result.get("high_stress_reason"),
+        "pdf_path":           pdf_path,
+        "email_payload":      email_payload,
+        "errors":             errors,
+    }
+
+
+def _new_response_id() -> str:
+    """タイムスタンプベースの簡易ID生成"""
+    import uuid
+    return uuid.uuid4().hex[:12]
+
+
+
+# ──────────────────────────────────────────────────────────
 # CLI エントリーポイント
 # ──────────────────────────────────────────────────────────
 if __name__ == "__main__":

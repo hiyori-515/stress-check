@@ -31,5 +31,9 @@ outputs/
 .env
 .env.*
 
+# Gmail API 認証情報（絶対にコミットしない）
+credentials.json
+token.json
+
 # Jupyter
 .ipynb_checkpoints/
