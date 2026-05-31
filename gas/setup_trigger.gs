@@ -52,23 +52,31 @@ function setupTrigger() {
     }
   });
 
+  var form;
   if (formId) {
-    // フォームIDが指定されている場合はフォームに直接バインド
-    var form = FormApp.openById(formId);
-    ScriptApp.newTrigger("onFormSubmit")
-      .forForm(form)
-      .onFormSubmit()
-      .create();
-    Logger.log("フォームトリガー登録完了: " + formId);
+    // スクリプトプロパティに FORM_ID が設定されている場合
+    form = FormApp.openById(formId);
+    Logger.log("FORM_ID からフォームを取得: " + formId);
   } else {
-    // スプレッドシートにバインドされたスクリプトの場合
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    ScriptApp.newTrigger("onFormSubmit")
-      .forSpreadsheet(ss)
-      .onFormSubmit()
-      .create();
-    Logger.log("スプレッドシートトリガー登録完了");
+    // スプレッドシートにバインドされたフォームから取得
+    var ss      = SpreadsheetApp.getActiveSpreadsheet();
+    var formUrl = ss.getFormUrl();
+    if (!formUrl) {
+      throw new Error(
+        "スプレッドシートにフォームが紐づいていません。" +
+        "スクリプトプロパティ FORM_ID を設定するか、" +
+        "フォームの回答先としてこのスプレッドシートを指定してください。"
+      );
+    }
+    form = FormApp.openByUrl(formUrl);
+    Logger.log("スプレッドシートにバインドされたフォームを取得: " + formUrl);
   }
+
+  ScriptApp.newTrigger("onFormSubmit")
+    .forForm(form)
+    .onFormSubmit()
+    .create();
+  Logger.log("フォームトリガー登録完了");
 }
 
 
