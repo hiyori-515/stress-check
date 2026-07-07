@@ -11,6 +11,8 @@
  *   以下のキーを設定してください:
  *     API_URL     : PythonバックエンドのURL（例: https://your-app.run.app/run-stress-check）
  *     FORM_ID     : GoogleフォームのID（スプレッドシートに紐づく場合は不要）
+ *     HIGH_STRESS_SHEET_ID : 高ストレス者を記録するスプレッドシートのID
+ *                            （未設定の場合はバインドされたスプレッドシートに記録）
  *
  * トリガー設定:
  *   setupTrigger() を一度だけ手動実行すると onFormSubmit が自動登録されます。
@@ -94,6 +96,16 @@ function onFormSubmit(e) {
     var result = _callApi(payload);
 
     if (result.status === "success" || result.status === "partial") {
+      if (result.high_stress) {
+        try {
+          _recordHighStress(payload, result);
+          Logger.log("高ストレス者を記録: " + payload.response_id);
+        } catch (recordErr) {
+          // 記録に失敗してもメール送信は継続する
+          Logger.log("_recordHighStress エラー: " + recordErr.toString());
+        }
+      }
+
       if (result.email_payload) {
         _sendEmail(result.email_payload);
         Logger.log("メール送信完了: " + result.email_payload.to);
@@ -174,6 +186,50 @@ function _sendEmail(emailPayload) {
       attachments: [pdfBlob],
     }
   );
+}
+
+
+// ── 高ストレス者の記録 ────────────────────────────────────────────
+
+var HIGH_STRESS_SHEET_NAME = "高ストレス者";
+
+/**
+ * 高ストレス判定された受検者をスプレッドシートに1行追記する
+ * ※ このシートは実施者のみ閲覧可（労働安全衛生法上、事業者への提供は本人同意が必要）
+ * @param {Object} payload - _buildApiPayload() が組み立てた APIペイロード
+ * @param {Object} result  - APIレスポンス（high_stress / high_stress_reason を含む）
+ */
+function _recordHighStress(payload, result) {
+  var props   = PropertiesService.getScriptProperties();
+  var sheetId = props.getProperty("HIGH_STRESS_SHEET_ID");
+
+  var ss = sheetId
+    ? SpreadsheetApp.openById(sheetId)
+    : SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) {
+    throw new Error(
+      "記録先スプレッドシートが見つかりません。" +
+      "スクリプトプロパティ HIGH_STRESS_SHEET_ID を設定してください。"
+    );
+  }
+
+  var sheet = ss.getSheetByName(HIGH_STRESS_SHEET_NAME)
+    || ss.insertSheet(HIGH_STRESS_SHEET_NAME);
+
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow([
+      "記録日時", "response_id", "氏名", "メールアドレス", "所属部署", "判定理由",
+    ]);
+  }
+
+  sheet.appendRow([
+    new Date(),
+    payload.response_id,
+    payload.name,
+    payload.email,
+    payload.department,
+    result.high_stress_reason || "",
+  ]);
 }
 
 
