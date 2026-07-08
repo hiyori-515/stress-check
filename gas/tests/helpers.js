@@ -49,7 +49,8 @@ function createMockSpreadsheet(sheets) {
  * .gs ソースをモック注入済みスコープで評価し、exportNames の関数を返す
  * @param {string}   source      - readGasSource() で読んだ .gs ソース
  * @param {string[]} exportNames - 取り出すグローバル関数名
- * @param {Object}   overrides   - { scriptProperties, SpreadsheetApp } を上書き
+ * @param {Object}   overrides   - { scriptProperties } と GAS グローバル
+ *                                 （SpreadsheetApp / GmailApp / UrlFetchApp 等）を上書き
  */
 function loadGas(source, exportNames, overrides = {}) {
   const scriptProps = overrides.scriptProperties || {};
@@ -61,7 +62,7 @@ function loadGas(source, exportNames, overrides = {}) {
           key in scriptProps ? scriptProps[key] : null,
       }),
     },
-    SpreadsheetApp: overrides.SpreadsheetApp || {
+    SpreadsheetApp: {
       openById() { throw new Error("openById is not mocked"); },
       getActiveSpreadsheet() { return null; },
     },
@@ -71,6 +72,11 @@ function loadGas(source, exportNames, overrides = {}) {
     GmailApp: {},
     Utilities: {},
   };
+  Object.keys(overrides).forEach((key) => {
+    if (key !== "scriptProperties" && key in mocks) {
+      mocks[key] = overrides[key];
+    }
+  });
   const factory = new Function(
     ...Object.keys(mocks),
     source + "\nreturn { " + exportNames.join(", ") + " };"

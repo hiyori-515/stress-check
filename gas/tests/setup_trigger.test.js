@@ -20,7 +20,23 @@ const {
 } = require("./helpers");
 
 const GAS_SOURCE = readGasSource("setup_trigger.gs");
-const EXPORTS = ["onFormSubmit", "_buildApiPayload", "_recordHighStress"];
+const EXPORTS = [
+  "onFormSubmit",
+  "_buildApiPayload",
+  "_recordHighStress",
+  "_sendInterviewGuidance",
+];
+
+/** GmailApp.sendEmail の呼び出しを記録するモック */
+function createMockGmail() {
+  const sent = [];
+  return {
+    sent,
+    sendEmail(to, subject, body, options) {
+      sent.push({ to, subject, body, options });
+    },
+  };
+}
 
 function loadGas(overrides = {}) {
   return loadGasSource(GAS_SOURCE, EXPORTS, overrides);
@@ -187,4 +203,154 @@ test("_recordHighStress: high_stress_reason が無い場合は空文字で記録
   gas._recordHighStress(PAYLOAD, { high_stress: true, high_stress_reason: null });
 
   assert.equal(ss.sheets["高ストレス者"].rows[1][5], "");
+});
+
+// ── _sendInterviewGuidance ────────────────────────────────────────
+
+test("_sendInterviewGuidance: 面接指導の案内メールを送信する", () => {
+  const gmail = createMockGmail();
+  const gas = loadGas({
+    scriptProperties: { INTERVIEW_CONTACT: "人事部 健康管理室 kenko@example.com" },
+    GmailApp: gmail,
+  });
+
+  gas._sendInterviewGuidance(PAYLOAD);
+
+  assert.equal(gmail.sent.length, 1);
+  const mail = gmail.sent[0];
+  assert.equal(mail.to, "taro@example.com");
+  assert.match(mail.subject, /面接指導/);
+  assert.equal(mail.options.from, "epiphanypsycho@gmail.com");
+  assert.match(mail.body, /テスト 太郎 様/);
+  assert.match(mail.body, /労働安全衛生法第66条の10/);
+  assert.match(mail.body, /医師による面接指導/);
+  assert.match(mail.body, /人事部 健康管理室 kenko@example\.com/);
+  assert.match(mail.body, /不利益な取扱い/);
+});
+
+test("_sendInterviewGuidance: INTERVIEW_CONTACT 未設定時は返信を窓口として案内する", () => {
+  const gmail = createMockGmail();
+  const gas = loadGas({ GmailApp: gmail });
+
+  gas._sendInterviewGuidance(PAYLOAD);
+
+  assert.match(gmail.sent[0].body, /本メールへの返信/);
+});
+
+test("_sendInterviewGuidance: メールアドレス未入力なら送信しない", () => {
+  const gmail = createMockGmail();
+  const gas = loadGas({ GmailApp: gmail });
+
+  gas._sendInterviewGuidance({ ...PAYLOAD, email: "" });
+
+  assert.equal(gmail.sent.length, 0);
+});
+
+// ── onFormSubmit（結合） ──────────────────────────────────────────
+
+/** API レスポンスを固定で返す UrlFetchApp と PDF 用 Utilities のモック */
+function createApiMocks(apiResult) {
+  return {
+    UrlFetchApp: {
+      fetch: () => ({
+        getResponseCode: () => 200,
+        getContentText: () => JSON.stringify(apiResult),
+      }),
+    },
+    Utilities: {
+      base64Decode: (s) => s,
+      newBlob: (bytes, type, name) => ({ bytes, type, name }),
+    },
+  };
+}
+
+const FORM_EVENT = {
+  namedValues: {
+    "お名前": ["テスト 太郎"],
+    "メールアドレス": ["taro@example.com"],
+    "所属部署": ["開発部"],
+    "Q1": ["4"],
+  },
+};
+
+const EMAIL_PAYLOAD = {
+  to: "taro@example.com",
+  subject: "ストレスチェック結果",
+  body: "結果を添付します",
+  pdf_base64: "UERG",
+  pdf_filename: "result.pdf",
+};
+
+test("onFormSubmit: 高ストレス判定時は結果メールの後に案内メールを別便で送る", () => {
+  const gmail = createMockGmail();
+  const ss = createMockSpreadsheet();
+  const gas = loadGas({
+    scriptProperties: { API_URL: "https://api.example.com" },
+    GmailApp: gmail,
+    SpreadsheetApp: {
+      openById: () => { throw new Error("unexpected"); },
+      getActiveSpreadsheet: () => ss,
+    },
+    ...createApiMocks({
+      status: "success",
+      high_stress: true,
+      high_stress_reason: "㋐",
+      email_payload: EMAIL_PAYLOAD,
+    }),
+  });
+
+  gas.onFormSubmit(FORM_EVENT);
+
+  assert.equal(gmail.sent.length, 2, "結果メール + 案内メールの2通");
+  assert.equal(gmail.sent[0].subject, "ストレスチェック結果");
+  assert.match(gmail.sent[1].subject, /面接指導/);
+  assert.equal(gmail.sent[1].to, "taro@example.com");
+  assert.equal(ss.sheets["高ストレス者"].rows.length, 2, "高ストレス記録も行われる");
+});
+
+test("onFormSubmit: 高ストレスでなければ案内メールは送らない", () => {
+  const gmail = createMockGmail();
+  const gas = loadGas({
+    scriptProperties: { API_URL: "https://api.example.com" },
+    GmailApp: gmail,
+    ...createApiMocks({
+      status: "success",
+      high_stress: false,
+      email_payload: EMAIL_PAYLOAD,
+    }),
+  });
+
+  gas.onFormSubmit(FORM_EVENT);
+
+  assert.equal(gmail.sent.length, 1, "結果メールのみ");
+  assert.equal(gmail.sent[0].subject, "ストレスチェック結果");
+});
+
+test("onFormSubmit: 案内メールの失敗は結果メール送信・高ストレス記録に影響しない", () => {
+  const sent = [];
+  const gmail = {
+    sent,
+    sendEmail(to, subject, body, options) {
+      if (/面接指導/.test(subject)) throw new Error("送信失敗");
+      sent.push({ to, subject, body, options });
+    },
+  };
+  const ss = createMockSpreadsheet();
+  const gas = loadGas({
+    scriptProperties: { API_URL: "https://api.example.com" },
+    GmailApp: gmail,
+    SpreadsheetApp: {
+      openById: () => { throw new Error("unexpected"); },
+      getActiveSpreadsheet: () => ss,
+    },
+    ...createApiMocks({
+      status: "success",
+      high_stress: true,
+      email_payload: EMAIL_PAYLOAD,
+    }),
+  });
+
+  assert.doesNotThrow(() => gas.onFormSubmit(FORM_EVENT));
+  assert.equal(sent.length, 1, "結果メールは送信済み");
+  assert.equal(ss.sheets["高ストレス者"].rows.length, 2, "記録も行われる");
 });

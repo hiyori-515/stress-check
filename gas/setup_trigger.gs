@@ -13,6 +13,8 @@
  *     FORM_ID     : GoogleフォームのID（スプレッドシートに紐づく場合は不要）
  *     HIGH_STRESS_SHEET_ID : 高ストレス者を記録するスプレッドシートのID
  *                            （未設定の場合はバインドされたスプレッドシートに記録）
+ *     INTERVIEW_CONTACT    : 面接指導の申出窓口（例: 人事部 健康管理室 kenko@example.com）
+ *                            （未設定の場合は案内メールへの返信を窓口として案内）
  *
  * トリガー設定:
  *   setupTrigger() を一度だけ手動実行すると onFormSubmit が自動登録されます。
@@ -112,6 +114,16 @@ function onFormSubmit(e) {
       } else {
         Logger.log("email_payload なし（メールアドレス未入力または PDF 生成失敗）");
       }
+
+      if (result.high_stress) {
+        try {
+          // 結果メールとは別便で面接指導の案内を送る
+          _sendInterviewGuidance(payload);
+        } catch (guidanceErr) {
+          // 案内メールの失敗は結果メール送信・高ストレス記録に影響させない
+          Logger.log("_sendInterviewGuidance エラー: " + guidanceErr.toString());
+        }
+      }
     } else {
       Logger.log("API エラー: " + JSON.stringify(result.errors));
     }
@@ -186,6 +198,60 @@ function _sendEmail(emailPayload) {
       attachments: [pdfBlob],
     }
   );
+}
+
+
+// ── 面接指導の案内メール ──────────────────────────────────────────
+
+var INTERVIEW_GUIDANCE_SUBJECT =
+  "【ご案内】ストレスチェック結果に基づく医師による面接指導について";
+
+/**
+ * 高ストレス判定された受検者へ面接指導の案内メールを送信する
+ * 通常の結果メール（_sendEmail）とは別便で送る
+ * @param {Object} payload - _buildApiPayload() が組み立てた APIペイロード
+ */
+function _sendInterviewGuidance(payload) {
+  if (!payload.email) {
+    Logger.log("面接指導案内: メールアドレス未入力のため送信スキップ");
+    return;
+  }
+
+  var contact =
+    PropertiesService.getScriptProperties().getProperty("INTERVIEW_CONTACT")
+    || "本メールへの返信にてご連絡ください";
+
+  var name = payload.name ? payload.name + " 様" : "受検者の皆様";
+  var body =
+    name + "\n" +
+    "\n" +
+    "このたびはストレスチェックにご回答いただき、ありがとうございます。\n" +
+    "\n" +
+    "今回のストレスチェックの結果、高ストレス者の選定基準に該当いたしました。\n" +
+    "つきましては、労働安全衛生法第66条の10に基づき、ご本人からのお申出により\n" +
+    "医師による面接指導を受けていただくことができますので、ご案内いたします。\n" +
+    "\n" +
+    "■ 面接指導とは\n" +
+    "医師があなたのストレスの状況や心身の健康状態を確認し、\n" +
+    "必要な助言・指導を行うものです。\n" +
+    "\n" +
+    "■ お申出の方法\n" +
+    "・面接指導を希望される場合は、結果の通知を受け取ってから\n" +
+    "  おおむね1か月以内に下記の窓口までお申出ください。\n" +
+    "・申出窓口: " + contact + "\n" +
+    "\n" +
+    "■ 安心してご利用いただくために\n" +
+    "・面接指導のお申出を理由として、解雇・不利益な配置転換等の\n" +
+    "  不利益な取扱いを行うことは、法律により禁止されています。\n" +
+    "・ストレスチェックの結果が、ご本人の同意なく事業者へ\n" +
+    "  提供されることはありません。\n" +
+    "\n" +
+    "ご不明な点がございましたら、上記窓口までお気軽にお問い合わせください。\n";
+
+  GmailApp.sendEmail(payload.email, INTERVIEW_GUIDANCE_SUBJECT, body, {
+    from: SENDER_EMAIL,
+  });
+  Logger.log("面接指導案内メール送信完了: " + payload.email);
 }
 
 
