@@ -27,6 +27,8 @@
 // ── 定数 ────────────────────────────────────────────────────────
 
 var GROUP_ANALYSIS_SHEET_NAME = "集団分析";
+// setup_trigger.gs の _recordHighStress が書き込むシート名と一致させること
+var HIGH_STRESS_SHEET_NAME = "高ストレス者";
 var DEFAULT_RESPONSES_SHEET_NAME = "フォームの回答 1";
 var DEFAULT_MIN_GROUP_SIZE = 10;
 
