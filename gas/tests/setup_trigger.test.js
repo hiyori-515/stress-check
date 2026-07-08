@@ -12,66 +12,18 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
+const {
+  readGasSource,
+  createMockSheet,
+  createMockSpreadsheet,
+  loadGas: loadGasSource,
+} = require("./helpers");
 
-const GAS_SOURCE = fs.readFileSync(
-  path.join(__dirname, "..", "setup_trigger.gs"),
-  "utf8"
-);
+const GAS_SOURCE = readGasSource("setup_trigger.gs");
+const EXPORTS = ["onFormSubmit", "_buildApiPayload", "_recordHighStress"];
 
-// ── モック ────────────────────────────────────────────────────────
-
-function createMockSheet(existingRows) {
-  const rows = existingRows ? existingRows.slice() : [];
-  return {
-    rows,
-    getLastRow() { return rows.length; },
-    appendRow(row) { rows.push(row); },
-  };
-}
-
-function createMockSpreadsheet(sheets) {
-  const registry = sheets || {};
-  return {
-    sheets: registry,
-    getSheetByName(name) { return registry[name] || null; },
-    insertSheet(name) {
-      registry[name] = createMockSheet();
-      return registry[name];
-    },
-  };
-}
-
-/**
- * setup_trigger.gs を GAS サービスのモックを注入した関数スコープで評価し、
- * テスト対象の関数を返す。
- */
 function loadGas(overrides = {}) {
-  const scriptProps = overrides.scriptProperties || {};
-  const mocks = {
-    Logger: { log() {} },
-    PropertiesService: {
-      getScriptProperties: () => ({
-        getProperty: (key) =>
-          key in scriptProps ? scriptProps[key] : null,
-      }),
-    },
-    SpreadsheetApp: overrides.SpreadsheetApp || {
-      openById() { throw new Error("openById is not mocked"); },
-      getActiveSpreadsheet() { return null; },
-    },
-    FormApp: {},
-    ScriptApp: {},
-    UrlFetchApp: {},
-    GmailApp: {},
-    Utilities: {},
-  };
-  const factory = new Function(
-    ...Object.keys(mocks),
-    GAS_SOURCE + "\nreturn { onFormSubmit, _buildApiPayload, _recordHighStress };"
-  );
-  return factory(...Object.values(mocks));
+  return loadGasSource(GAS_SOURCE, EXPORTS, overrides);
 }
 
 // ── _buildApiPayload ──────────────────────────────────────────────
