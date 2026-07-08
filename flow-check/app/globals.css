@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-noto-sans-jp), "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+  --color-navy: #1a365d;
+  --color-navy-dark: #12294a;
+  --color-navy-light: #eef2f7;
+  --color-gold: #b7935a;
+  --color-gold-light: #f6f0e6;
+}
+
+body {
+  @apply bg-white text-gray-900 font-sans antialiased;
+}
