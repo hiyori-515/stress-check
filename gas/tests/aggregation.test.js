@@ -3,8 +3,8 @@
 /**
  * gas/aggregation.gs の Node ベース簡易テスト
  *
- * aggregation.gs は setup_trigger.gs の HIGH_STRESS_SHEET_NAME を参照するため、
- * GAS 本番と同様に両ファイルを単一グローバルスコープとして評価する。
+ * aggregation.gs は setup_trigger.gs と別プロジェクトでも動くよう
+ * 自己完結している必要があるため、単体で評価する（回帰テストを兼ねる）。
  *
  * 実行方法: node --test gas/tests/
  */
@@ -18,7 +18,7 @@ const {
   loadGas,
 } = require("./helpers");
 
-const SOURCE = readGasSource("setup_trigger.gs", "aggregation.gs");
+const SOURCE = readGasSource("aggregation.gs");
 const EXPORTS = ["runGroupAnalysis", "_aggregateGroups", "_dedupeByKey"];
 
 function load(overrides) {
