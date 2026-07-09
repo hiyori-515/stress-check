@@ -20,11 +20,11 @@ export const CATEGORIES: Category[] = [
 ];
 
 export const CATEGORY_LABELS: Record<Category, string> = {
-  judgment: "判断の流れ",
-  execution: "実行の流れ",
-  honesty: "本音の流れ",
-  roles: "役割の流れ",
-  delegation: "委譲の流れ",
+  judgment: "判断 Decision",
+  execution: "実行 Action",
+  honesty: "本音 Voice",
+  roles: "役割 Role",
+  delegation: "委譲 Handoff",
 };
 
 export const SCALE_OPTIONS = [
