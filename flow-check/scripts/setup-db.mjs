@@ -41,6 +41,10 @@ const TABLES = [
   "diagnostic_sessions",
   "answers",
   "category_scores",
+  // フェーズ2 (schema-phase2.sql)
+  "ai_hypothesis",
+  "interview_notes",
+  "final_assessment",
 ];
 
 let allOk = true;
