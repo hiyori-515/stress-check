@@ -8,9 +8,7 @@ export default function HomePage() {
           Flow Check
         </h1>
         <p className="text-lg text-gray-800 leading-relaxed mb-10">
-          決めたのに進まない、任せたのに戻ってくる——
-          <br className="hidden sm:block" />
-          その理由を、面談前に整理します。
+          25の質問で、経営者が感じる組織の今を整理します。
         </p>
         <ul className="text-left inline-block space-y-3 text-gray-700 mb-10">
           <li className="flex items-start gap-2">
