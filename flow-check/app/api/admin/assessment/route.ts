@@ -14,6 +14,7 @@ export async function POST(request: Request) {
   let body: {
     session_id?: string;
     internal_structure_notes?: string;
+    client_facing_comment?: string;
     confirmed_flow_areas?: unknown;
   };
   try {
@@ -49,13 +50,14 @@ export async function POST(request: Request) {
       {
         session_id: body.session_id,
         internal_structure_notes: body.internal_structure_notes ?? "",
+        client_facing_comment: body.client_facing_comment ?? "",
         confirmed_flow_areas: areas,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "session_id" }
     )
     .select(
-      "id, session_id, internal_structure_notes, confirmed_flow_areas, updated_at"
+      "id, session_id, internal_structure_notes, client_facing_comment, confirmed_flow_areas, updated_at"
     )
     .single();
 

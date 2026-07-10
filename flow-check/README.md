@@ -1,6 +1,6 @@
 # Flow Check
 
-経営者向け診断フォーム＋管理画面（フェーズ1＋フェーズ2）。
+経営者向け診断フォーム＋管理画面（フェーズ1〜3）。
 
 - 診断フォーム（認証なし）: 属性入力 → 25問回答 → 完了
 - 回答データのSupabase保存とカテゴリ別スコアの自動集計
@@ -8,8 +8,9 @@
   - 回答一覧・個別回答詳細（詳細ビュー / 要点ビューのタブ切り替え）
   - AI仮説レポート生成（Anthropic API・claude-sonnet-4-6）
   - 面談メモの入力・保存（複数件）
-  - 最終見立ての入力・保存（内部構造メモ＋該当尺度）
+  - 最終見立ての入力・保存（内部構造メモ＋経営者向けコメント＋該当尺度）
   - ステータス変更（未面談 / 面談済み / レポート送付済み / 伴走移行 / クローズ）
+  - 経営者向けPDFレポートの生成・プレビュー・ダウンロード（4ページ構成）
 
 ## 技術スタック
 
@@ -17,6 +18,7 @@
 - Next.js Route Handlers（API）
 - Supabase (PostgreSQL / Auth)
 - Anthropic API（AI仮説レポート生成）
+- @react-pdf/renderer（PDFレポート生成・Noto Sans JP同梱: `assets/fonts/`）
 
 ## セットアップ
 
@@ -45,6 +47,7 @@ SupabaseダッシュボードのSQLエディタで以下を順に実行してく
 
 1. `supabase/schema.sql`（フェーズ1: respondents / diagnostic_sessions / answers / category_scores）
 2. `supabase/schema-phase2.sql`（フェーズ2: ai_hypothesis / interview_notes / final_assessment）
+3. `supabase/schema-phase3.sql`（フェーズ3: final_assessmentにclient_facing_commentを追加）
 
 実行後、以下でテーブルが作成されたか確認できます:
 
@@ -91,7 +94,8 @@ app/
         ├── notes/route.ts                  # 面談メモ保存 (POST)
         ├── notes/[session_id]/route.ts     # 面談メモ取得 (GET)
         ├── assessment/route.ts             # 最終見立て保存 (POST)
-        └── assessment/[session_id]/route.ts # 最終見立て取得 (GET)
+        ├── assessment/[session_id]/route.ts # 最終見立て取得 (GET)
+        └── report/[session_id]/route.ts    # PDFレポート生成 (GET, application/pdf)
 lib/
 ├── supabase.ts                     # ブラウザ用Supabaseクライアント
 ├── supabase-admin.ts               # サーバー用（service role）＋認証検証
@@ -105,10 +109,13 @@ components/
 ├── ProgressBar.tsx
 ├── CategoryScoreBar.tsx
 ├── InterviewNotesSection.tsx       # 面談メモ入力・一覧
-└── FinalAssessmentSection.tsx      # 最終見立て入力
+├── FinalAssessmentSection.tsx      # 最終見立て入力（経営者向けコメント含む）
+└── ReportDocument.tsx              # PDFレポートのレイアウト定義（サーバー専用）
+assets/fonts/                       # PDF用 Noto Sans JP（Regular / Bold）
 supabase/
 ├── schema.sql                      # フェーズ1スキーマ＋RLSポリシー
-└── schema-phase2.sql               # フェーズ2スキーマ（AI仮説・面談メモ・最終見立て）
+├── schema-phase2.sql               # フェーズ2スキーマ（AI仮説・面談メモ・最終見立て）
+└── schema-phase3.sql               # フェーズ3スキーマ（経営者向けコメント）
 scripts/
 ├── setup-db.mjs                    # テーブル作成確認
 └── create-admin.mjs                # 管理者アカウント作成
@@ -125,3 +132,13 @@ scripts/
 - 個別回答詳細（詳細ビュー）の「仮説レポートを生成」ボタンで生成
 - Anthropic API（`claude-sonnet-4-6`）を使用し、結果は `ai_hypothesis` に保存（再生成で上書き）
 - `ANTHROPIC_API_KEY` が未設定の場合は画面にエラーメッセージを表示
+
+## PDFレポート（経営者向け）
+
+- 個別回答詳細ページ下部の「PDFレポートを生成」ボタンで生成し、画面内でプレビュー・ダウンロードできる
+- 4ページ構成: 表紙 / 今回の整理結果（スコアバー＋高スコア領域の説明） / 面談で見えてきたこと / 次のステップ
+- 3ページ目には最終見立ての「経営者向けコメント」がそのまま掲載される。
+  未入力の間は生成ボタンが無効（APIも400を返す）
+- 内部構造用語・分析語はPDFに一切出力しない
+- フォントはリポジトリ同梱の Noto Sans JP を使用（`next.config.ts` の
+  `outputFileTracingIncludes` でVercelのサーバーレス関数にも同梱される）
