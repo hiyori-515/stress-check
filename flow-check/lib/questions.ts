@@ -40,7 +40,7 @@ export const QUESTIONS: Question[] = [
   {
     no: 1,
     category: "judgment",
-    text: "ふと振り返ると、今日も自分が一番多く「それでいこう」と言っていた",
+    text: "気がつくと、自分がOKを出さないと物事が進まなくなっている",
   },
   {
     no: 2,
@@ -60,7 +60,7 @@ export const QUESTIONS: Question[] = [
   {
     no: 5,
     category: "judgment",
-    text: "誰かが決めたことでも、自分が「いいよ」と言わないと動き出さない空気がある",
+    text: "周囲が自分の反応を確かめてから動いているように感じることがある",
   },
   // カテゴリB: execution
   {

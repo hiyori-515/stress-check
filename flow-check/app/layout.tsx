@@ -10,8 +10,7 @@ const notoSansJP = Noto_Sans_JP({
 
 export const metadata: Metadata = {
   title: "Flow Check",
-  description:
-    "決めたのに進まない、任せたのに戻ってくる——その理由を、面談前に整理します。",
+  description: "25の質問で、経営者が感じる組織の今を整理します。",
 };
 
 export default function RootLayout({
