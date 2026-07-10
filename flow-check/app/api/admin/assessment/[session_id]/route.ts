@@ -18,7 +18,7 @@ export async function GET(
   const { data, error } = await supabase
     .from("final_assessment")
     .select(
-      "id, session_id, internal_structure_notes, confirmed_flow_areas, updated_at"
+      "id, session_id, internal_structure_notes, client_facing_comment, confirmed_flow_areas, updated_at"
     )
     .eq("session_id", session_id)
     .maybeSingle();

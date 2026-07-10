@@ -6,13 +6,17 @@ import { CATEGORIES, CATEGORY_LABELS, type Category } from "@/lib/questions";
 interface FinalAssessmentSectionProps {
   sessionId: string;
   token: string;
+  /** 保存済みの経営者向けコメント有無を親（PDF生成ボタン）へ通知する */
+  onClientCommentChange?: (hasComment: boolean) => void;
 }
 
 export default function FinalAssessmentSection({
   sessionId,
   token,
+  onClientCommentChange,
 }: FinalAssessmentSectionProps) {
   const [notes, setNotes] = useState("");
+  const [clientComment, setClientComment] = useState("");
   const [areas, setAreas] = useState<Category[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
@@ -29,12 +33,16 @@ export default function FinalAssessmentSection({
         const body = await response.json();
         if (body.assessment) {
           setNotes(body.assessment.internal_structure_notes ?? "");
+          setClientComment(body.assessment.client_facing_comment ?? "");
           setAreas(
             Array.isArray(body.assessment.confirmed_flow_areas)
               ? body.assessment.confirmed_flow_areas
               : []
           );
           setUpdatedAt(body.assessment.updated_at ?? null);
+          onClientCommentChange?.(
+            !!body.assessment.client_facing_comment?.trim()
+          );
         }
       } else {
         setError("最終見立ての取得に失敗しました");
@@ -42,7 +50,7 @@ export default function FinalAssessmentSection({
       setLoaded(true);
     };
     load();
-  }, [sessionId, token]);
+  }, [sessionId, token, onClientCommentChange]);
 
   const toggleArea = (category: Category) => {
     setAreas((prev) =>
@@ -67,6 +75,7 @@ export default function FinalAssessmentSection({
       body: JSON.stringify({
         session_id: sessionId,
         internal_structure_notes: notes,
+        client_facing_comment: clientComment,
         confirmed_flow_areas: areas,
       }),
     });
@@ -79,6 +88,7 @@ export default function FinalAssessmentSection({
     const body = await response.json();
     setUpdatedAt(body.assessment.updated_at ?? null);
     setMessage("保存しました");
+    onClientCommentChange?.(!!clientComment.trim());
   };
 
   return (
@@ -117,6 +127,27 @@ export default function FinalAssessmentSection({
               value={notes}
               onChange={(e) => {
                 setNotes(e.target.value);
+                setMessage(null);
+              }}
+              rows={6}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-navy"
+            />
+          </div>
+          <div>
+            <label
+              htmlFor="client_facing_comment"
+              className="block text-sm font-medium mb-1"
+            >
+              経営者向けコメント（PDFレポートに掲載されます）
+            </label>
+            <p className="text-xs text-gray-500 mb-2">
+              ※PDFの「面談で見えてきたこと」ページにそのまま掲載されます。経営者に渡す言葉で書いてください。
+            </p>
+            <textarea
+              id="client_facing_comment"
+              value={clientComment}
+              onChange={(e) => {
+                setClientComment(e.target.value);
                 setMessage(null);
               }}
               rows={6}

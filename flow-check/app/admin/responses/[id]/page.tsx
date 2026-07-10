@@ -80,6 +80,11 @@ export default function AdminResponseDetailPage() {
     new Set()
   );
 
+  const [hasClientComment, setHasClientComment] = useState(false);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+
   useEffect(() => {
     const load = async () => {
       const supabase = getSupabaseBrowserClient();
@@ -170,6 +175,26 @@ export default function AdminResponseDetailPage() {
     }
     const body = await response.json();
     setHypothesis(body.hypothesis);
+  };
+
+  const handleGeneratePdf = async () => {
+    if (!token) return;
+    setPdfLoading(true);
+    setPdfError(null);
+    const response = await fetch(`/api/admin/report/${params.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    setPdfLoading(false);
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      setPdfError(body?.error ?? "PDFの生成に失敗しました");
+      return;
+    }
+    const blob = await response.blob();
+    setPdfUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(blob);
+    });
   };
 
   const toggleQuestion = (index: number) => {
@@ -565,7 +590,56 @@ export default function AdminResponseDetailPage() {
         {token && (
           <>
             <InterviewNotesSection sessionId={params.id} token={token} />
-            <FinalAssessmentSection sessionId={params.id} token={token} />
+            <FinalAssessmentSection
+              sessionId={params.id}
+              token={token}
+              onClientCommentChange={setHasClientComment}
+            />
+
+            {/* PDFレポート */}
+            <section className="bg-white border border-gray-200 rounded-xl p-6">
+              <h2 className="text-lg font-bold text-navy mb-4">
+                PDFレポート
+              </h2>
+              <p className="text-sm text-gray-600 mb-4">
+                経営者にお渡しするレポートを生成します。カテゴリ別スコアと「経営者向けコメント」が掲載されます。
+              </p>
+              <div className="flex items-center gap-4 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleGeneratePdf}
+                  disabled={!hasClientComment || pdfLoading}
+                  className="bg-navy hover:bg-navy-dark text-white font-bold px-6 py-2 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {pdfLoading ? "生成中..." : "PDFレポートを生成"}
+                </button>
+                {!hasClientComment && (
+                  <p className="text-sm text-gray-500">
+                    経営者向けコメントを入力してからPDFを生成できます
+                  </p>
+                )}
+                {pdfUrl && (
+                  <a
+                    href={pdfUrl}
+                    download={`flow-check-report-${params.id.slice(0, 8)}.pdf`}
+                    className="border border-navy text-navy font-bold px-6 py-2 rounded-lg hover:bg-navy-light transition-colors"
+                  >
+                    PDFをダウンロード
+                  </a>
+                )}
+              </div>
+              {pdfError && (
+                <p className="text-sm text-red-500 mt-3">{pdfError}</p>
+              )}
+              {pdfUrl && (
+                <iframe
+                  src={pdfUrl}
+                  title="PDFレポートプレビュー"
+                  className="w-full mt-6 border border-gray-200 rounded-lg"
+                  style={{ height: "640px" }}
+                />
+              )}
+            </section>
           </>
         )}
       </div>
