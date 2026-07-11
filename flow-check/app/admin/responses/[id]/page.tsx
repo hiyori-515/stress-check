@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import CategoryScoreBar from "@/components/CategoryScoreBar";
+import RadarScoreChart from "@/components/RadarScoreChart";
 import FinalAssessmentSection from "@/components/FinalAssessmentSection";
 import InterviewNotesSection from "@/components/InterviewNotesSection";
 import type { HypothesisReport } from "@/lib/hypothesis";
@@ -238,14 +239,6 @@ export default function AdminResponseDetailPage() {
   );
   const scaleLabel = (score: number | undefined) =>
     SCALE_OPTIONS.find((option) => option.value === score)?.label ?? "-";
-
-  // 要点ビュー: 高レベルのカテゴリをスコア降順で最大2つ（高がなければ最上位1つ）
-  const sortedScores = [...detail.category_scores].sort(
-    (a, b) => b.total_score - a.total_score
-  );
-  const highScores = sortedScores.filter((s) => s.level === "高").slice(0, 2);
-  const digestScores =
-    highScores.length > 0 ? highScores : sortedScores.slice(0, 1);
 
   return (
     <main className="flex-1 px-6 py-8 bg-gray-50">
@@ -512,25 +505,10 @@ export default function AdminResponseDetailPage() {
           /* 要点ビュー（面談中に参照する用・1画面完結） */
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <section className="bg-white border border-gray-200 rounded-xl p-6">
-              <h2 className="text-lg font-bold text-navy mb-4">
-                高スコアカテゴリ
+              <h2 className="text-lg font-bold text-navy mb-2">
+                カテゴリ別スコア
               </h2>
-              {highScores.length === 0 && (
-                <p className="text-xs text-gray-500 mb-3">
-                  レベル「高」のカテゴリはありません。最上位のカテゴリを表示しています。
-                </p>
-              )}
-              <div className="space-y-3">
-                {digestScores.map((score) => (
-                  <CategoryScoreBar
-                    key={score.category}
-                    label={CATEGORY_LABELS[score.category]}
-                    score={score.total_score}
-                    maxScore={20}
-                    level={score.level}
-                  />
-                ))}
-              </div>
+              <RadarScoreChart scores={detail.category_scores} />
 
               <h2 className="text-lg font-bold text-navy mt-6 mb-3">仮説</h2>
               {hypothesis ? (

@@ -1,12 +1,16 @@
 import {
   Document,
   Font,
+  Line,
   Page,
+  Polygon,
   StyleSheet,
+  Svg,
   Text,
   View,
 } from "@react-pdf/renderer";
 import path from "node:path";
+import React from "react";
 import { CATEGORIES, CATEGORY_LABELS, type Category } from "@/lib/questions";
 import type { Level } from "@/lib/scoring";
 
@@ -144,32 +148,10 @@ const styles = StyleSheet.create({
     fontSize: 9.5,
     color: "#6b7280",
   },
-  // スコアバー
-  scoreRow: {
-    marginBottom: 14,
-  },
-  scoreLabelRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 4,
-  },
-  scoreLabel: {
-    fontSize: 11,
-    fontWeight: 700,
-    color: NAVY,
-  },
-  scoreValue: {
-    fontSize: 11,
-    color: "#374151",
-  },
-  scoreTrack: {
-    height: 9,
-    backgroundColor: GRAY_TRACK,
-    borderRadius: 4.5,
-  },
-  scoreFill: {
-    height: 9,
-    borderRadius: 4.5,
+  // レーダーチャート
+  radarWrap: {
+    alignItems: "center",
+    marginTop: 4,
   },
   scoreNote: {
     fontSize: 9,
@@ -205,6 +187,130 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
   },
 });
+
+// ===== レーダーチャート(SVG直接描画) =====
+const RADAR = {
+  width: 380,
+  height: 300,
+  cx: 190,
+  cy: 150,
+  radius: 96,
+  maxValue: 20,
+  gridSteps: [5, 10, 15, 20],
+  labelOffset: 18,
+};
+
+/** 頂点i(0=上から時計回り)・値vの座標 */
+function radarPoint(value: number, index: number): { x: number; y: number } {
+  const angle = ((-90 + index * 72) * Math.PI) / 180;
+  const r = (RADAR.radius * value) / RADAR.maxValue;
+  return {
+    x: RADAR.cx + r * Math.cos(angle),
+    y: RADAR.cy + r * Math.sin(angle),
+  };
+}
+
+function radarPolygonPoints(values: number[]): string {
+  return values
+    .map((value, i) => {
+      const p = radarPoint(value, i);
+      return `${p.x.toFixed(1)},${p.y.toFixed(1)}`;
+    })
+    .join(" ");
+}
+
+// 各頂点の外側ラベル配置（anchor/2行分のオフセット）
+const RADAR_LABEL_CONFIG = [
+  { anchor: "middle", dy1: -16, dy2: -4 }, // 上
+  { anchor: "start", dy1: 0, dy2: 12 }, // 右上
+  { anchor: "start", dy1: 10, dy2: 22 }, // 右下
+  { anchor: "end", dy1: 10, dy2: 22 }, // 左下
+  { anchor: "end", dy1: 0, dy2: 12 }, // 左上
+] as const;
+
+function RadarChartSvg({ scores }: { scores: Map<Category, ReportScore> }) {
+  const values = CATEGORIES.map(
+    (category) => scores.get(category)?.total_score ?? 0
+  );
+  return (
+    <Svg
+      width={RADAR.width}
+      height={RADAR.height}
+      viewBox={`0 0 ${RADAR.width} ${RADAR.height}`}
+    >
+      {/* 五角形グリッド(5,10,15,20) */}
+      {RADAR.gridSteps.map((step) => (
+        <Polygon
+          key={step}
+          points={radarPolygonPoints([step, step, step, step, step])}
+          fill="none"
+          stroke={GRAY_TRACK}
+          strokeWidth={1}
+        />
+      ))}
+      {/* 軸線 */}
+      {CATEGORIES.map((category, i) => {
+        const outer = radarPoint(RADAR.maxValue, i);
+        return (
+          <Line
+            key={category}
+            x1={RADAR.cx}
+            y1={RADAR.cy}
+            x2={outer.x}
+            y2={outer.y}
+            stroke={GRAY_TRACK}
+            strokeWidth={1}
+          />
+        );
+      })}
+      {/* データ(半透明の紺) */}
+      <Polygon
+        points={radarPolygonPoints(values)}
+        fill={NAVY}
+        fillOpacity={0.35}
+        stroke={NAVY}
+        strokeWidth={1.5}
+      />
+      {/* 軸ラベル(日本語+英語)とスコア。高スコアは赤系で強調 */}
+      {CATEGORIES.map((category, i) => {
+        const score = scores.get(category);
+        const isHigh = score?.level === "高";
+        const color = isHigh ? "#dc2626" : "#374151";
+        const outer = radarPoint(RADAR.maxValue, i);
+        const angle = ((-90 + i * 72) * Math.PI) / 180;
+        const lx = outer.x + RADAR.labelOffset * Math.cos(angle);
+        const ly = outer.y + RADAR.labelOffset * Math.sin(angle);
+        const config = RADAR_LABEL_CONFIG[i];
+        return (
+          <React.Fragment key={category}>
+            <Text
+              x={lx}
+              y={ly + config.dy1}
+              textAnchor={config.anchor}
+              style={{
+                fontFamily: "Noto Sans JP",
+                fontSize: 10,
+                fontWeight: isHigh ? 700 : 400,
+              }}
+              fill={color}
+            >
+              {CATEGORY_LABELS[category]}
+            </Text>
+            <Text
+              x={lx}
+              y={ly + config.dy2}
+              textAnchor={config.anchor}
+              style={{ fontFamily: "Noto Sans JP", fontSize: 9 }}
+              fill={color}
+            >
+              {`${score?.total_score ?? 0}/20`}
+            </Text>
+          </React.Fragment>
+        );
+      })}
+    </Svg>
+  );
+}
 
 function Footer() {
   return (
@@ -257,35 +363,10 @@ export function buildReportDocument(data: ReportData) {
       {/* 2ページ目: 今回の整理結果 */}
       <Page size="A4" style={styles.page}>
         <SectionHeading title="今回の整理結果" />
-        <View>
-          {CATEGORIES.map((category) => {
-            const score = scoreByCategory.get(category);
-            const total = score?.total_score ?? 0;
-            const isHigh = score?.level === "高";
-            return (
-              <View key={category} style={styles.scoreRow}>
-                <View style={styles.scoreLabelRow}>
-                  <Text style={styles.scoreLabel}>
-                    {CATEGORY_LABELS[category]}
-                  </Text>
-                  <Text style={styles.scoreValue}>{total}/20</Text>
-                </View>
-                <View style={styles.scoreTrack}>
-                  <View
-                    style={[
-                      styles.scoreFill,
-                      {
-                        width: `${Math.round((total / 20) * 100)}%`,
-                        backgroundColor: isHigh ? GOLD : NAVY,
-                      },
-                    ]}
-                  />
-                </View>
-              </View>
-            );
-          })}
+        <View style={styles.radarWrap}>
+          <RadarChartSvg scores={scoreByCategory} />
           <Text style={styles.scoreNote}>
-            ※スコアが高いほど、その領域に詰まりが集中しています
+            ※外側に広がっている領域ほど、詰まりが集中しています
           </Text>
         </View>
 
