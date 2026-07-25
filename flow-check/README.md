@@ -2,7 +2,7 @@
 
 経営者向け診断フォーム＋管理画面（フェーズ1〜3）。
 
-- 診断フォーム（認証なし）: 属性入力 → 25問回答 → 完了
+- 診断フォーム（認証なし）: 属性入力 → 25問回答 → 完了（レーダーチャートで結果を表示）
 - 回答データのSupabase保存とカテゴリ別スコアの自動集計
 - 管理画面（Supabase Auth・Email/Passwordログイン）:
   - 回答一覧・個別回答詳細（詳細ビュー / 要点ビューのタブ切り替え。要点ビューはレーダーチャート表示）
@@ -85,6 +85,8 @@ app/
 │   └── responses/[id]/page.tsx     # 個別回答詳細
 └── api/
     ├── check/submit/route.ts       # 回答送信API（認証不要）
+    ├── check/scores/[session_id]/route.ts # 完了画面のスコア取得（認証不要・スコアのみ返す）
+    ├── health/db/route.ts          # 接続診断
     └── admin/                      # 管理API（Bearerトークン認証）
         ├── responses/route.ts              # 回答一覧
         ├── responses/[id]/route.ts         # 回答詳細
@@ -108,7 +110,7 @@ components/
 ├── QuestionCard.tsx
 ├── ProgressBar.tsx
 ├── CategoryScoreBar.tsx            # 横棒グラフ（詳細ビュー用）
-├── RadarScoreChart.tsx             # レーダーチャート（要点ビュー用・recharts）
+├── RadarScoreChart.tsx             # レーダーチャート（recharts）。variantで管理用/回答者用を切替
 ├── InterviewNotesSection.tsx       # 面談メモ入力・一覧
 ├── FinalAssessmentSection.tsx      # 最終見立て入力（経営者向けコメント含む）
 └── ReportDocument.tsx              # PDFレポートのレイアウト定義（サーバー専用）
@@ -165,3 +167,14 @@ scripts/
 > 補足: 回答保存では、挿入したIDをアプリ側で採番しています。これは
 > `insert().select()` がRLSの**読み取り**ポリシー（認証済みのみ）にも依存してしまい、
 > キー設定を誤ると保存できなくなるためです。
+
+## 完了画面のレーダーチャート
+
+- 回答送信後、`session_id` をsessionStorageで完了画面に引き継ぎ、
+  `GET /api/check/scores/[session_id]` で5尺度のスコアを取得して表示する
+- 表示するのは数値の可視化のみ。解釈・診断的コメント・高スコアの強調は行わない
+  （解釈は面談で伝えるため）。`RadarScoreChart` の `variant="respondent"` がこれにあたる
+- スコアが取得できない場合・5尺度が揃わない場合はチャートを出さず、
+  テキストのみの画面を表示する（回答者にエラーは見せない）
+- スコア取得APIは認証不要だが、返すのはスコアのみ。氏名・会社名・メール・
+  個別回答は返さない。`session_id` はUUIDのため推測できない

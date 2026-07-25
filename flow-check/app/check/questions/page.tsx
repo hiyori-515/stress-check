@@ -4,7 +4,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import ProgressBar from "@/components/ProgressBar";
 import QuestionCard from "@/components/QuestionCard";
-import { PROFILE_STORAGE_KEY, type Profile } from "@/lib/profile";
+import {
+  PROFILE_STORAGE_KEY,
+  RESULT_SESSION_STORAGE_KEY,
+  type Profile,
+} from "@/lib/profile";
 import { QUESTIONS, TOTAL_QUESTIONS } from "@/lib/questions";
 
 const emptySubscribe = () => () => {};
@@ -94,7 +98,12 @@ export default function QuestionsPage() {
         }
         throw new Error(body?.error ?? "送信に失敗しました");
       }
+      // 完了画面でスコアを取得するためsession_idを引き継ぐ
+      const body = await response.json().catch(() => null);
       sessionStorage.removeItem(PROFILE_STORAGE_KEY);
+      if (body?.session_id) {
+        sessionStorage.setItem(RESULT_SESSION_STORAGE_KEY, body.session_id);
+      }
       router.push("/check/complete");
     } catch (error) {
       setSubmitError(
