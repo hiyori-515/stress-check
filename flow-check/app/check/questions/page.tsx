@@ -29,6 +29,7 @@ export default function QuestionsPage() {
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitHint, setSubmitHint] = useState<string | null>(null);
 
   useEffect(() => {
     // 属性入力を経ずに直接アクセスされた場合は属性入力へ戻す
@@ -70,6 +71,7 @@ export default function QuestionsPage() {
 
     setSubmitting(true);
     setSubmitError(null);
+    setSubmitHint(null);
     try {
       const response = await fetch("/api/check/submit", {
         method: "POST",
@@ -84,6 +86,12 @@ export default function QuestionsPage() {
       });
       if (!response.ok) {
         const body = await response.json().catch(() => null);
+        // 回答はstateに残るので、原因を直したうえで再送信できる
+        if (body?.hint) {
+          setSubmitHint(
+            body.code ? `${body.hint}（コード: ${body.code}）` : body.hint
+          );
+        }
         throw new Error(body?.error ?? "送信に失敗しました");
       }
       sessionStorage.removeItem(PROFILE_STORAGE_KEY);
@@ -110,9 +118,15 @@ export default function QuestionsPage() {
           onSelect={handleSelect}
         />
         {submitError && (
-          <p className="mt-4 text-sm text-red-500 text-center">
-            {submitError}
-          </p>
+          <div className="mt-4 text-center">
+            <p className="text-sm text-red-500">{submitError}</p>
+            <p className="text-xs text-gray-500 mt-1">
+              回答は画面に残っています。「回答を送信する」をもう一度お試しください。
+            </p>
+            {submitHint && (
+              <p className="text-xs text-gray-400 mt-2">{submitHint}</p>
+            )}
+          </div>
         )}
         <div className="flex gap-4 mt-8">
           <button
