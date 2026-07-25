@@ -143,3 +143,25 @@ scripts/
 - 内部構造用語・分析語はPDFに一切出力しない
 - フォントはリポジトリ同梱の Noto Sans JP を使用（`next.config.ts` の
   `outputFileTracingIncludes` でVercelのサーバーレス関数にも同梱される）
+
+## トラブルシューティング（回答の保存に失敗する場合）
+
+診断の最後で「回答の保存に失敗しました」と表示される場合、まず本番URLの
+`/api/health/db` をブラウザで開いてください。環境変数の設定有無と、各テーブルへの
+到達可否・書き込み可否がJSONで表示されます（値そのものは表示されません）。
+
+よくある原因と対処:
+
+| 表示されるコード | 原因 | 対処 |
+|---|---|---|
+| `unreachable` | Supabaseプロジェクトが一時停止（無料プランは一定期間未使用で自動停止） | Supabaseダッシュボードで Restore / Resume する |
+| `42P01` | テーブルが未作成（SQL未実行） | SQLエディタで `supabase/schema.sql` →`schema-phase2.sql` →`schema-phase3.sql` を実行 |
+| `42501` | RLSで書き込みが拒否された（anonキーを service role 欄に設定している等） | Vercelの `SUPABASE_SERVICE_ROLE_KEY` に secret（service role）キーを設定して再デプロイ |
+| `env_missing` | 環境変数が未設定 | Vercelの Environment Variables を設定して再デプロイ |
+
+保存に失敗しても回答内容は画面に残るため、原因を解消したあと「回答を送信する」を
+押し直せばそのまま送信できます。
+
+> 補足: 回答保存では、挿入したIDをアプリ側で採番しています。これは
+> `insert().select()` がRLSの**読み取り**ポリシー（認証済みのみ）にも依存してしまい、
+> キー設定を誤ると保存できなくなるためです。

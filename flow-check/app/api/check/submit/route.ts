@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import type { Profile } from "@/lib/profile";
 import {
@@ -11,7 +12,10 @@ import {
   computeCategoryScores,
   type AnswerInput,
 } from "@/lib/scoring";
-import { createAdminClient } from "@/lib/supabase-admin";
+import {
+  createAdminClient,
+  describeSupabaseError,
+} from "@/lib/supabase-admin";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -89,87 +93,86 @@ export async function POST(request: Request) {
   }
 
   const { profile, answers } = body;
-  const supabase = createAdminClient();
+
+  let supabase;
+  try {
+    supabase = createAdminClient();
+  } catch (error) {
+    console.error("supabase client init failed:", error);
+    return NextResponse.json(
+      {
+        error: "サーバー設定に問題があります",
+        code: "env_missing",
+        hint: error instanceof Error ? error.message : "環境変数を確認してください",
+      },
+      { status: 500 }
+    );
+  }
+
+  // IDはアプリ側で採番する。挿入直後のSELECT(RETURNING)を不要にすることで、
+  // 読み取りを認証済みのみに限定しているRLSポリシー下でも確実に保存できる。
+  const respondentId = randomUUID();
+  const sessionId = randomUUID();
+
+  const fail = (
+    step: string,
+    error: { code?: string; message?: string } | null
+  ) => {
+    const { code, hint } = describeSupabaseError(error);
+    console.error(`${step} insert failed:`, { code, error });
+    return NextResponse.json(
+      { error: "回答の保存に失敗しました", step, code, hint },
+      { status: 500 }
+    );
+  };
 
   // 1. 回答者を登録
-  const { data: respondent, error: respondentError } = await supabase
-    .from("respondents")
-    .insert({
-      name: profile.name.trim(),
-      company_name: profile.company_name.trim(),
-      position: profile.position.trim(),
-      industry: profile.industry,
-      employee_count: profile.employee_count,
-      email: profile.email.trim(),
-      phone: profile.phone?.trim() || null,
-      lead_source: profile.lead_source,
-    })
-    .select("id")
-    .single();
-
-  if (respondentError || !respondent) {
-    console.error("respondents insert failed:", respondentError);
-    return NextResponse.json(
-      { error: "回答の保存に失敗しました" },
-      { status: 500 }
-    );
-  }
+  const { error: respondentError } = await supabase.from("respondents").insert({
+    id: respondentId,
+    name: profile.name.trim(),
+    company_name: profile.company_name.trim(),
+    position: profile.position.trim(),
+    industry: profile.industry,
+    employee_count: profile.employee_count,
+    email: profile.email.trim(),
+    phone: profile.phone?.trim() || null,
+    lead_source: profile.lead_source,
+  });
+  if (respondentError) return fail("respondents", respondentError);
 
   // 2. 診断セッションを登録
-  const { data: session, error: sessionError } = await supabase
+  const { error: sessionError } = await supabase
     .from("diagnostic_sessions")
     .insert({
-      respondent_id: respondent.id,
+      id: sessionId,
+      respondent_id: respondentId,
       status: "未面談",
       completed_at: new Date().toISOString(),
-    })
-    .select("id")
-    .single();
-
-  if (sessionError || !session) {
-    console.error("diagnostic_sessions insert failed:", sessionError);
-    return NextResponse.json(
-      { error: "回答の保存に失敗しました" },
-      { status: 500 }
-    );
-  }
+    });
+  if (sessionError) return fail("diagnostic_sessions", sessionError);
 
   // 3. 個別回答を登録（categoryはquestion_noから自動判定）
   const { error: answersError } = await supabase.from("answers").insert(
     answers.map((answer) => ({
-      session_id: session.id,
+      session_id: sessionId,
       question_no: answer.question_no,
       category: categoryForQuestion(answer.question_no),
       score: answer.score,
     }))
   );
-
-  if (answersError) {
-    console.error("answers insert failed:", answersError);
-    return NextResponse.json(
-      { error: "回答の保存に失敗しました" },
-      { status: 500 }
-    );
-  }
+  if (answersError) return fail("answers", answersError);
 
   // 4. カテゴリ別スコアを集計して登録
   const categoryScores = computeCategoryScores(answers);
   const { error: scoresError } = await supabase.from("category_scores").insert(
     categoryScores.map((score) => ({
-      session_id: session.id,
+      session_id: sessionId,
       category: score.category,
       total_score: score.total_score,
       level: score.level,
     }))
   );
+  if (scoresError) return fail("category_scores", scoresError);
 
-  if (scoresError) {
-    console.error("category_scores insert failed:", scoresError);
-    return NextResponse.json(
-      { error: "回答の保存に失敗しました" },
-      { status: 500 }
-    );
-  }
-
-  return NextResponse.json({ ok: true, session_id: session.id });
+  return NextResponse.json({ ok: true, session_id: sessionId });
 }
