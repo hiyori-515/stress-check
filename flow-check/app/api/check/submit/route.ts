@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
+import { notifyNewResponse } from "@/lib/chatwork";
 import type { Profile } from "@/lib/profile";
 import {
   EMPLOYEE_COUNT_OPTIONS,
@@ -141,13 +142,14 @@ export async function POST(request: Request) {
   if (respondentError) return fail("respondents", respondentError);
 
   // 2. 診断セッションを登録
+  const completedAt = new Date().toISOString();
   const { error: sessionError } = await supabase
     .from("diagnostic_sessions")
     .insert({
       id: sessionId,
       respondent_id: respondentId,
       status: "未面談",
-      completed_at: new Date().toISOString(),
+      completed_at: completedAt,
     });
   if (sessionError) return fail("diagnostic_sessions", sessionError);
 
@@ -173,6 +175,20 @@ export async function POST(request: Request) {
     }))
   );
   if (scoresError) return fail("category_scores", scoresError);
+
+  // 5. 新規回答をChatworkへ通知する。
+  // 保存はすでに完了しているため、通知が失敗しても回答者には成功を返す。
+  // notifyNewResponse は内部で例外を握りつぶすので、ここでの失敗は起きない。
+  await notifyNewResponse({
+    companyName: profile.company_name.trim(),
+    name: profile.name.trim(),
+    position: profile.position.trim(),
+    industry: profile.industry,
+    employeeCount: profile.employee_count,
+    leadSource: profile.lead_source,
+    completedAt,
+    sessionId,
+  });
 
   return NextResponse.json({ ok: true, session_id: sessionId });
 }

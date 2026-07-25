@@ -31,9 +31,16 @@ NEXT_PUBLIC_SUPABASE_URL=<SupabaseプロジェクトURL>
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon (publishable) キー>
 SUPABASE_SERVICE_ROLE_KEY=<service role (secret) キー>
 ANTHROPIC_API_KEY=<Anthropic APIキー。未設定の間は仮説レポート生成時に画面へエラーが表示されます>
+
+# 任意: 新規回答のChatwork通知。未設定なら通知をスキップする
+CHATWORK_API_TOKEN=<Chatwork APIトークン>
+CHATWORK_ROOM_ID=<通知先のルームID>
+# 任意: 通知内の管理画面URLのベース（独自ドメインに移行した場合に指定）
+NEXT_PUBLIC_SITE_URL=https://flow-check-eta.vercel.app
 ```
 
-Vercelにデプロイする場合は、同じ4つを Environment Variables にも設定してください。
+Vercelにデプロイする場合は、同じものを Environment Variables にも設定してください
+（Supabaseの3つは必須。Anthropic・Chatworkは該当機能を使う場合のみ）。
 
 ### 2. 依存パッケージ
 
@@ -106,7 +113,8 @@ lib/
 ├── questions.ts                    # 質問データ定義（25問・5カテゴリ）
 ├── scoring.ts                      # スコアリングロジック
 ├── status.ts                       # ステータス選択肢
-└── hypothesis.ts                   # AI仮説レポートのプロンプト組み立て・応答解析
+├── hypothesis.ts                   # AI仮説レポートのプロンプト組み立て・応答解析
+└── chatwork.ts                     # 新規回答のChatwork通知（メッセージ組み立て＋送信）
 components/
 ├── QuestionCard.tsx
 ├── ProgressBar.tsx
@@ -197,3 +205,16 @@ Supabase無料プランは約1週間アクセスがないとプロジェクト�
 
 デプロイ後、Vercelダッシュボードの Settings → Cron Jobs で登録を確認できます。
 同画面の Run から手動実行も可能です。
+
+## 新規回答のChatwork通知
+
+回答が保存されたあと、Chatworkへ通知を送ります（`lib/chatwork.ts`）。
+
+- 送信タイミング: `POST /api/check/submit` で保存・採点がすべて成功した直後
+- 通知内容: 会社名・氏名・役職・業種・従業員数・きっかけ・回答日時(JST)・管理画面リンク。
+  **メールアドレスと電話番号は含めない**
+- `CHATWORK_API_TOKEN` / `CHATWORK_ROOM_ID` が未設定なら通知をスキップする（fail open）
+- 通知の失敗・タイムアウト（3秒）は握りつぶし、回答者には正常完了を返す。
+  失敗の内容はサーバーログにのみ出力する
+- 管理画面リンクのドメインは `NEXT_PUBLIC_SITE_URL` で上書きできる
+  （未設定時は本番URLを使用）
