@@ -87,6 +87,7 @@ app/
     ├── check/submit/route.ts       # 回答送信API（認証不要）
     ├── check/scores/[session_id]/route.ts # 完了画面のスコア取得（認証不要・スコアのみ返す）
     ├── health/db/route.ts          # 接続診断
+    ├── cron/keep-alive/route.ts    # Supabase自動停止防止（Vercel Cron・要CRON_SECRET）
     └── admin/                      # 管理API（Bearerトークン認証）
         ├── responses/route.ts              # 回答一覧
         ├── responses/[id]/route.ts         # 回答詳細
@@ -119,6 +120,7 @@ supabase/
 ├── schema.sql                      # フェーズ1スキーマ＋RLSポリシー
 ├── schema-phase2.sql               # フェーズ2スキーマ（AI仮説・面談メモ・最終見立て）
 └── schema-phase3.sql               # フェーズ3スキーマ（経営者向けコメント）
+vercel.json                         # Vercel Cron定義（keep-alive）
 scripts/
 ├── setup-db.mjs                    # テーブル作成確認
 └── create-admin.mjs                # 管理者アカウント作成
@@ -178,3 +180,20 @@ scripts/
   テキストのみの画面を表示する（回答者にエラーは見せない）
 - スコア取得APIは認証不要だが、返すのはスコアのみ。氏名・会社名・メール・
   個別回答は返さない。`session_id` はUUIDのため推測できない
+
+## Supabaseの自動停止（pause）防止
+
+Supabase無料プランは約1週間アクセスがないとプロジェクトを自動停止します。
+これを防ぐため、Vercel Cronで1日1回 `GET /api/cron/keep-alive` を呼び、
+接続実績を作っています。
+
+- スケジュール: `vercel.json` の `crons` で毎日 UTC 03:00（日本時間 12:00）
+- 認証: Vercel Cronが付与する `Authorization: Bearer <CRON_SECRET>` を検証。
+  一致しない場合と `CRON_SECRET` 未設定の場合は401（fail close）
+- `CRON_SECRET` はcron定義時にVercelが自動生成するため、手動設定は不要
+- 応答は `{ ok, count, timestamp }` のみ。テーブル構成や環境変数の状態は返さない
+  （診断情報が必要な場合は `/api/health/db` を使う）
+- Hobbyプランではcronは1日1回が上限。7日間の猶予に対して十分
+
+デプロイ後、Vercelダッシュボードの Settings → Cron Jobs で登録を確認できます。
+同画面の Run から手動実行も可能です。
