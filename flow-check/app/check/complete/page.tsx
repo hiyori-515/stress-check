@@ -43,7 +43,7 @@ export default function CompletePage() {
         {scores && (
           <section className="mb-10">
             <h2 className="text-lg font-bold text-navy mb-1">
-              あなたの組織の流れ
+              組織の流れ 現在地
             </h2>
             <div className="mx-auto w-full max-w-[400px]">
               <RadarScoreChart
@@ -58,11 +58,15 @@ export default function CompletePage() {
           </section>
         )}
 
-        <p className="text-gray-700 leading-relaxed">
-          回答内容をもとに、面談前の整理を行います。
-          <br />
-          担当者より、面談のご案内をお送りいたします。
-        </p>
+        <section>
+          <h2 className="text-lg font-bold text-navy mb-3">この後の流れ</h2>
+          {/* 親がtext-centerのため、inline-blockでリスト自体を中央に置きつつ本文は左揃え */}
+          <ol className="inline-block text-left list-decimal list-inside text-gray-700 leading-relaxed space-y-1">
+            <li>ご回答内容を弊社で分析</li>
+            <li>担当者より面談日程をご案内</li>
+            <li>フィードバック面談（30分）</li>
+          </ol>
+        </section>
       </div>
     </main>
   );
