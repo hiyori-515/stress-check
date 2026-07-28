@@ -62,8 +62,8 @@ export default function CompletePage() {
           <h2 className="text-lg font-bold text-navy mb-3">この後の流れ</h2>
           {/* 親がtext-centerのため、inline-blockでリスト自体を中央に置きつつ本文は左揃え */}
           <ol className="inline-block text-left list-decimal list-inside text-gray-700 leading-relaxed space-y-1">
-            <li>ご回答内容を弊社で分析</li>
-            <li>担当者より面談日程をご案内</li>
+            <li>ご回答内容を黒川が確認・分析</li>
+            <li>面談日程をメールでご案内</li>
             <li>フィードバック面談（30分）</li>
           </ol>
         </section>
