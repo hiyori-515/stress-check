@@ -72,7 +72,7 @@ export default function ProfilePage() {
       <div className="max-w-xl mx-auto">
         <h1 className="text-2xl font-bold text-navy mb-2">Flow Check</h1>
         <p className="text-gray-700 mb-8">
-          はじめに、あなたについて教えてください。
+          はじめに、ご自身について教えてください。
         </p>
         <form onSubmit={handleSubmit} noValidate className="space-y-6">
           <div>
